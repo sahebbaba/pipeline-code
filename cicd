@@ -1,0 +1,97 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_IMAGE = "my-app:${env.BUILD_NUMBER}"
+        DOCKER_REGISTRY = "my-docker-registry.com"
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                // Checkout the source code from Git repository
+                git 'https://github.com/your-repo/your-app.git'
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                // Build the project using Maven
+                sh 'mvn clean install'
+            }
+        }
+        
+        stage('Static Code Analysis') {
+            steps {
+                // Run SonarQube analysis
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn sonar:sonar'
+                }
+            }
+        }
+        
+        stage('Unit Testing') {
+            steps {
+                // Run unit tests using Maven
+                sh 'mvn test'
+            }
+        }
+        
+        stage('Package') {
+            steps {
+                // Package the application
+                sh 'mvn package'
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                // Build Docker image
+                script {
+                    docker.build("${env.DOCKER_IMAGE}")
+                }
+            }
+        }
+        
+        stage('Push Docker Image') {
+            steps {
+                // Push Docker image to registry
+                script {
+                    docker.withRegistry("https://${env.DOCKER_REGISTRY}", 'docker-credentials-id') {
+                        docker.image("${env.DOCKER_IMAGE}").push()
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Staging') {
+            steps {
+                // Deploy the Docker image to the staging environment
+                sh '''
+                docker pull ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE}
+                docker run -d -p 8080:8080 ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE}
+                '''
+            }
+        }
+        
+        stage('Deploy to Production') {
+            steps {
+                // Deploy the Docker image to the production environment (manual approval required)
+                input 'Deploy to production?'
+                sh '''
+                docker pull ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE}
+                docker run -d -p 8080:8080 ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE}
+                '''
+            }
+        }
+    }
+    
+    post {
+        always {
+            // Send notifications
+            mail to: 'your-email@example.com',
+                 subject: "Jenkins Pipeline: ${currentBuild.fullDisplayName}",
+                 body: "Pipeline ${currentBuild.fullDisplayName} finished with status: ${currentBuild.currentResult}"
+        }
+    }
+}
